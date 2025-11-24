@@ -9,7 +9,7 @@ export class VoiceInputService {
 
   private initRecognition() {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    
+
     if (!SpeechRecognition) {
       console.warn('Speech Recognition not supported in this browser');
       return;
@@ -22,7 +22,7 @@ export class VoiceInputService {
     this.recognition.maxAlternatives = 1;
   }
 
-  async startListening(duration: number = 5000): Promise<string> {
+  async startListening(duration: number = 5000, onInterim?: (text: string) => void): Promise<string> {
     return new Promise((resolve, reject) => {
       if (!this.recognition) {
         reject(new Error('Speech Recognition not available'));
@@ -30,14 +30,32 @@ export class VoiceInputService {
       }
 
       this.transcript = '';
-      
+
       const timeout = setTimeout(() => {
         this.stopListening();
         resolve(this.transcript || 'guerriero silenzioso');
       }, duration);
 
       this.recognition.onresult = (event: any) => {
-        this.transcript = event.results[0][0].transcript;
+        let interimTranscript = '';
+        let finalTranscript = '';
+
+        for (let i = 0; i < event.results.length; i++) {
+          const result = event.results[i];
+          if (result.isFinal) {
+            finalTranscript += result[0].transcript;
+          } else {
+            interimTranscript += result[0].transcript;
+          }
+        }
+
+        this.transcript = finalTranscript || interimTranscript;
+
+        // Callback per mostrare il testo in tempo reale
+        if (onInterim && (interimTranscript || finalTranscript)) {
+          onInterim(this.transcript);
+        }
+
         console.log('Voice transcript:', this.transcript);
       };
 

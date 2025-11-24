@@ -1,7 +1,14 @@
 import { CharacterData, GenerationRequest, GenerationResponse } from '../types/Character';
+import { SpriteGeneratorService } from './SpriteGeneratorService';
 
 export class ClaudeCharacterGenerator {
-  private apiEndpoint = 'https://api.anthropic.com/v1/messages';
+  private spriteGenerator: SpriteGeneratorService;
+  // private apiEndpoint = 'https://api.anthropic.com/v1/messages';
+  private apiEndpoint = 'https://betest.loonar.it:8080/pm/ai/text-generator';
+
+  constructor() {
+    this.spriteGenerator = new SpriteGeneratorService();
+  }
 
   async generateCharacter(request: GenerationRequest): Promise<GenerationResponse> {
     const prompt = this.buildPrompt(request.voiceTranscript);
@@ -13,6 +20,14 @@ export class ClaudeCharacterGenerator {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+            action: "generate",
+            length: 1024,
+            model: "claude-sonnet-4-20250514",
+            prompt: prompt,
+            provider: "anthropic",
+            systemPrompt: "",
+            tone: "comic",
+        }/*{
           model: 'claude-sonnet-4-20250514',
           max_tokens: 2000,
           messages: [
@@ -21,7 +36,7 @@ export class ClaudeCharacterGenerator {
               content: prompt
             }
           ]
-        })
+        }*/)
       });
 
       if (!response.ok) {
@@ -29,8 +44,13 @@ export class ClaudeCharacterGenerator {
       }
 
       const data = await response.json();
-      const characterJson = this.extractJSON(data.content[0].text);
+      const characterJson = this.extractJSON(data.response);
       const character = JSON.parse(characterJson) as CharacterData;
+
+      // Genera anche la sprite (in background, non blocca)
+      this.generateSpriteForCharacter(character).catch(err => {
+        console.warn('Sprite generation failed (using fallback):', err);
+      });
 
       return {
         character,
@@ -97,15 +117,15 @@ Regole:
   private extractJSON(text: string): string {
     // Remove markdown code blocks if present
     let cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    
+
     // Find JSON object
     const jsonStart = cleaned.indexOf('{');
     const jsonEnd = cleaned.lastIndexOf('}');
-    
+
     if (jsonStart !== -1 && jsonEnd !== -1) {
       cleaned = cleaned.substring(jsonStart, jsonEnd + 1);
     }
-    
+
     return cleaned;
   }
 
@@ -144,5 +164,39 @@ Regole:
         ko: '2 frame: dissoluzione in particelle luminose'
       }
     };
+  }
+
+  /**
+   * Genera la sprite per il personaggio (asincrono, non blocca il gioco)
+   */
+  private async generateSpriteForCharacter(character: CharacterData): Promise<void> {
+    console.log(`🎨 Starting sprite generation for ${character.name}...`);
+
+    try {
+      const spriteImage = await this.spriteGenerator.generateSprite({
+        description: character.description,
+        archetype: character.archetype,
+        name: character.name,
+        stats: character.stats
+      });
+
+      if (spriteImage) {
+        console.log(`✅ Sprite generated successfully for ${character.name}`);
+
+        // La sprite sarà disponibile per il prossimo utilizzo del personaggio
+        // (per ora è solo in memoria, ma potrebbe essere salvata)
+
+        // Emit evento per notificare che la sprite è pronta
+        window.dispatchEvent(new CustomEvent('sprite-generated', {
+          detail: {
+            characterName: character.name,
+            spriteImage
+          }
+        }));
+      }
+    } catch (error) {
+      console.error(`❌ Failed to generate sprite for ${character.name}:`, error);
+      throw error;
+    }
   }
 }
